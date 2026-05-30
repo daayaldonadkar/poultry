@@ -9,17 +9,6 @@ interface BillHistoryCardProps {
   onPress: (bill: BillRow) => void;
 }
 
-/** Format ISO date string to a readable format */
-function formatDate(isoString: string): string {
-  const date = new Date(isoString);
-  return date.toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 /**
  * Card displaying a single bill in the history list.
@@ -33,10 +22,14 @@ export function BillHistoryCard({ bill, onPress }: BillHistoryCardProps) {
     >
       <View style={styles.header}>
         <Text style={styles.billNumber}>Bill #{bill.id}</Text>
-        <Text style={styles.date}>{formatDate(bill.created_at)}</Text>
       </View>
 
       <View style={styles.details}>
+        <View style={styles.detailItem}>
+          <Text style={styles.detailLabel}>Pieces</Text>
+          <Text style={styles.detailValue}>{bill.total_pieces ?? 0} pcs</Text>
+        </View>
+
         <View style={styles.detailItem}>
           <Text style={styles.detailLabel}>Weight</Text>
           <Text style={styles.detailValue}>{bill.total_weight.toFixed(2)} kg</Text>

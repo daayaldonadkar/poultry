@@ -47,20 +47,8 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen
-          name="index"
+          name="(tabs)"
           options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="breeds"
-          options={{ title: 'Breed Management' }}
-        />
-        <Stack.Screen
-          name="create-bill"
-          options={{ title: 'Create Bill' }}
-        />
-        <Stack.Screen
-          name="bill-history"
-          options={{ title: 'Bill History' }}
         />
         <Stack.Screen
           name="bill-detail"

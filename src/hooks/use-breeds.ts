@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import type { BreedRow } from '../database/types';
 import {
   getAllBreeds,
@@ -77,9 +78,11 @@ export function useBreeds(): UseBreedsReturn {
     }
   }, [refresh]);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   return { breeds, loading, error, refresh, addBreed, editBreed, removeBreed };
 }

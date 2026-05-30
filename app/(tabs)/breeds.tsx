@@ -1,4 +1,4 @@
-import BreedsScreen from '../src/screens/breeds-screen';
+import BreedsScreen from '../../src/screens/breeds-screen';
 
 /**
  * Expo Router route for /breeds.

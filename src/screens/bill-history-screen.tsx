@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { View, FlatList, StyleSheet } from 'react-native';
-import { ActivityIndicator, Snackbar } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useState, useCallback, useMemo } from 'react';
+import { View, SectionList, StyleSheet } from 'react-native';
+import { Text, ActivityIndicator, Snackbar } from 'react-native-paper';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { getBills } from '../repositories/bill-repository';
 import { BillHistoryCard } from '../components/bill-history-card';
 import { EmptyState } from '../components/empty-state';
@@ -31,9 +31,11 @@ export default function BillHistoryScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadBills();
-  }, [loadBills]);
+  useFocusEffect(
+    useCallback(() => {
+      loadBills();
+    }, [loadBills])
+  );
 
   const handlePressBill = useCallback(
     (bill: BillRow) => {
@@ -41,6 +43,33 @@ export default function BillHistoryScreen() {
     },
     [router],
   );
+
+  const sections = useMemo(() => {
+    const grouped = bills.reduce((acc, bill) => {
+      const dateStr = new Date(bill.created_at).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+      if (!acc[dateStr]) acc[dateStr] = [];
+      acc[dateStr].push(bill);
+      return acc;
+    }, {} as Record<string, BillRow[]>);
+
+    return Object.entries(grouped).map(([title, data]) => {
+      const totalPieces = data.reduce((sum, bill) => sum + (bill.total_pieces ?? 0), 0);
+      const totalWeight = data.reduce((sum, bill) => sum + bill.total_weight, 0);
+      const totalRevenue = data.reduce((sum, bill) => sum + bill.total_amount, 0);
+
+      return {
+        title,
+        data,
+        totalPieces,
+        totalWeight,
+        totalRevenue,
+      };
+    });
+  }, [bills]);
 
   if (loading) {
     return (
@@ -59,13 +88,33 @@ export default function BillHistoryScreen() {
           subtitle="Bills you create will appear here"
         />
       ) : (
-        <FlatList
-          data={bills}
+        <SectionList
+          sections={sections}
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => (
             <BillHistoryCard bill={item} onPress={handlePressBill} />
           )}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              <View style={styles.sectionSummary}>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Pieces</Text>
+                  <Text style={styles.summaryValue}>{section.totalPieces}</Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Weight</Text>
+                  <Text style={styles.summaryValue}>{section.totalWeight.toFixed(2)} kg</Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Revenue</Text>
+                  <Text style={styles.summaryRevenue}>₹{section.totalRevenue.toFixed(2)}</Text>
+                </View>
+              </View>
+            </View>
+          )}
           contentContainerStyle={styles.list}
+          stickySectionHeadersEnabled={true}
         />
       )}
 
@@ -94,5 +143,44 @@ const styles = StyleSheet.create({
   list: {
     paddingTop: 8,
     paddingBottom: 24,
+  },
+  sectionHeader: {
+    backgroundColor: Colors.background,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  sectionSummary: {
+    flexDirection: 'row',
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  summaryItem: {
+    flex: 1,
+  },
+  summaryLabel: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  summaryValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  summaryRevenue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.primary,
   },
 });

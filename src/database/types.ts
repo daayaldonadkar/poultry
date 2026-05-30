@@ -16,6 +16,7 @@ export interface BillRow {
   total_weight: number;
   total_amount: number;
   created_at: string;
+  total_pieces?: number;
 }
 
 /** Row shape for the `bill_items` table */

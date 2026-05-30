@@ -83,7 +83,11 @@ export async function createBill(input: CreateBillInput): Promise<number> {
  */
 export async function getBills(): Promise<BillRow[]> {
   return queryAll<BillRow>(
-    `SELECT * FROM ${Tables.BILLS} ORDER BY created_at DESC`,
+    `SELECT b.*, COALESCE(SUM(bi.pieces), 0) AS total_pieces
+     FROM ${Tables.BILLS} b
+     LEFT JOIN ${Tables.BILL_ITEMS} bi ON b.id = bi.bill_id
+     GROUP BY b.id
+     ORDER BY b.created_at DESC`
   );
 }
 

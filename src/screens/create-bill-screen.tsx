@@ -16,7 +16,7 @@ import {
   ActivityIndicator,
 } from 'react-native-paper';
 import { useBreeds } from '../hooks/use-breeds';
-import { BreedPicker } from '../components/breed-picker';
+import { HorizontalBreedSelector } from '../components/horizontal-breed-selector';
 import { BillItemCard } from '../components/bill-item-card';
 import { EmptyState } from '../components/empty-state';
 import { Colors } from '../constants/colors';
@@ -173,7 +173,7 @@ export default function CreateBillScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Add Item</Text>
 
-          <BreedPicker
+          <HorizontalBreedSelector
             breeds={breeds}
             selectedBreed={selectedBreed}
             onSelect={setSelectedBreed}
