@@ -12,6 +12,7 @@ export const CREATE_BREEDS_TABLE = `
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT    NOT NULL,
     price_per_kg REAL   NOT NULL,
+    sort_order  INTEGER DEFAULT 0,
     created_at  TEXT    NOT NULL
   );
 `;

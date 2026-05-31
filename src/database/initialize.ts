@@ -26,6 +26,16 @@ export async function initializeDatabase(): Promise<void> {
       await db.execAsync(statement);
     }
 
+    // --- MIGRATIONS ---
+    try {
+      // Add sort_order column to breeds if it doesn't exist.
+      // If it exists, this will throw, which we can safely ignore.
+      await db.execAsync('ALTER TABLE breeds ADD COLUMN sort_order INTEGER DEFAULT 0;');
+      console.log('   Migration applied: added sort_order to breeds');
+    } catch (e) {
+      // Column already exists, safe to ignore.
+    }
+
     console.log(
       `✅ Database "${DATABASE_NAME}" initialized successfully (v${DATABASE_VERSION})`,
     );

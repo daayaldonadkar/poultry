@@ -7,10 +7,10 @@ import type { BreedRow } from '../database/types';
  * Uses the existing database helpers for all queries.
  */
 
-/** Fetch all breeds, ordered by name ascending. */
+/** Fetch all breeds, ordered by sequence ascending. */
 export async function getAllBreeds(): Promise<BreedRow[]> {
   return queryAll<BreedRow>(
-    `SELECT * FROM ${Tables.BREEDS} ORDER BY name ASC`,
+    `SELECT * FROM ${Tables.BREEDS} ORDER BY sort_order ASC, name ASC`,
   );
 }
 
@@ -28,9 +28,16 @@ export async function createBreed(
   pricePerKg: number,
 ): Promise<number> {
   const now = new Date().toISOString();
+
+  // Find the highest sort_order so we can append to the end
+  const maxSortRow = await queryFirst<{ maxSort: number | null }>(
+    `SELECT MAX(sort_order) as maxSort FROM ${Tables.BREEDS}`
+  );
+  const nextSortOrder = (maxSortRow?.maxSort ?? 0) + 1;
+
   const result = await execute(
-    `INSERT INTO ${Tables.BREEDS} (name, price_per_kg, created_at) VALUES (?, ?, ?)`,
-    [name, pricePerKg, now],
+    `INSERT INTO ${Tables.BREEDS} (name, price_per_kg, sort_order, created_at) VALUES (?, ?, ?, ?)`,
+    [name, pricePerKg, nextSortOrder, now],
   );
   return result.lastInsertRowId;
 }
@@ -53,4 +60,20 @@ export async function deleteBreed(id: number): Promise<void> {
     `DELETE FROM ${Tables.BREEDS} WHERE id = ?`,
     [id],
   );
+}
+
+import { getDatabase } from '../database/client';
+
+/** Update the sequence (sort_order) of multiple breeds. */
+export async function updateBreedSequence(orderedBreedIds: number[]): Promise<void> {
+  const db = await getDatabase();
+  await db.withTransactionAsync(async () => {
+    for (let i = 0; i < orderedBreedIds.length; i++) {
+      const breedId = orderedBreedIds[i];
+      await db.runAsync(
+        `UPDATE ${Tables.BREEDS} SET sort_order = ? WHERE id = ?`,
+        [i, breedId]
+      );
+    }
+  });
 }

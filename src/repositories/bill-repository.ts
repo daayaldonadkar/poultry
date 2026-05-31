@@ -24,6 +24,18 @@ export interface CreateBillInput {
 }
 
 /**
+ * Input shape for updating an existing bill item.
+ */
+export interface UpdateBillItemInput {
+  itemId: number;
+  billId: number;
+  breedId: number;
+  pieces: number;
+  weight: number;
+  amount: number;
+}
+
+/**
  * Creates a bill with all its line items in a single transaction.
  *
  * Flow:
@@ -152,4 +164,37 @@ export async function getBillById(id: number): Promise<BillWithItems | null> {
     createdAt: bill.created_at,
     items,
   };
+}
+
+/**
+ * Updates an existing bill item and recalculates the grand total for the bill.
+ * Uses a transaction to ensure database consistency.
+ */
+export async function updateBillItem(input: UpdateBillItemInput): Promise<void> {
+  const { itemId, billId, breedId, pieces, weight, amount } = input;
+  const db = await getDatabase();
+
+  await db.withTransactionAsync(async () => {
+    // 1. Update the item
+    await db.runAsync(
+      `UPDATE ${Tables.BILL_ITEMS} SET breed_id = ?, pieces = ?, weight = ?, amount = ? WHERE id = ?`,
+      [breedId, pieces, weight, amount, itemId]
+    );
+
+    // 2. Recalculate bill totals
+    const totals = await queryFirst<{ totalWeight: number; totalAmount: number }>(
+      `SELECT COALESCE(SUM(weight), 0) AS totalWeight, COALESCE(SUM(amount), 0) AS totalAmount FROM ${Tables.BILL_ITEMS} WHERE bill_id = ?`,
+      [billId]
+    );
+
+    if (!totals) {
+      throw new Error('Failed to recalculate bill totals');
+    }
+
+    // 3. Update the bill
+    await db.runAsync(
+      `UPDATE ${Tables.BILLS} SET total_weight = ?, total_amount = ? WHERE id = ?`,
+      [totals.totalWeight, totals.totalAmount, billId]
+    );
+  });
 }

@@ -29,7 +29,7 @@ import type { BreedRow } from '../database/types';
  * - Error snackbar for user-friendly error messages
  */
 export default function BreedsScreen() {
-  const { breeds, loading, error, addBreed, editBreed, removeBreed } = useBreeds();
+  const { breeds, loading, error, addBreed, editBreed, removeBreed, moveBreed } = useBreeds();
 
   // Form dialog state
   const [formVisible, setFormVisible] = useState(false);
@@ -108,11 +108,15 @@ export default function BreedsScreen() {
         <FlatList
           data={breeds}
           keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <BreedListItem
               breed={item}
               onPress={handleEdit}
               onDelete={handleDeleteRequest}
+              onMoveUp={(b) => moveBreed(b.id, 'up')}
+              onMoveDown={(b) => moveBreed(b.id, 'down')}
+              isFirst={index === 0}
+              isLast={index === breeds.length - 1}
             />
           )}
           contentContainerStyle={styles.list}

@@ -7,6 +7,7 @@ export interface BreedRow {
   id: number;
   name: string;
   price_per_kg: number;
+  sort_order: number;
   created_at: string;
 }
 

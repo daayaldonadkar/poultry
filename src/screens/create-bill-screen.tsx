@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   View,
   ScrollView,
@@ -18,11 +19,12 @@ import {
 import { useBreeds } from '../hooks/use-breeds';
 import { HorizontalBreedSelector } from '../components/horizontal-breed-selector';
 import { BillItemCard } from '../components/bill-item-card';
+import { BillHistoryCard } from '../components/bill-history-card';
 import { EmptyState } from '../components/empty-state';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
-import { createBill } from '../repositories/bill-repository';
-import type { BreedRow } from '../database/types';
+import { createBill, getBills } from '../repositories/bill-repository';
+import type { BreedRow, BillRow } from '../database/types';
 import type { BillItem, BillSummary } from '../types/bill';
 
 /**
@@ -36,6 +38,7 @@ import type { BillItem, BillSummary } from '../types/bill';
  * 5. Tap "Save Bill" → placeholder alert
  */
 export default function CreateBillScreen() {
+  const router = useRouter();
   const { breeds, loading } = useBreeds();
 
   // --- Add Item form state ---
@@ -44,22 +47,78 @@ export default function CreateBillScreen() {
   const [weight, setWeight] = useState('');
   const [formError, setFormError] = useState('');
 
+  // Auto-select the first breed when breeds load
+  useEffect(() => {
+    if (breeds.length > 0 && !selectedBreed) {
+      setSelectedBreed(breeds[0]);
+    }
+  }, [breeds, selectedBreed]);
+
   // --- Bill items state ---
   const [items, setItems] = useState<BillItem[]>([]);
   const [snackbar, setSnackbar] = useState('');
   const [saving, setSaving] = useState(false);
+  const [recentBills, setRecentBills] = useState<BillRow[]>([]);
+
+  // --- Load Recent Bills ---
+  const loadRecentBills = useCallback(async () => {
+    try {
+      const data = await getBills();
+      if (data.length === 0) {
+        setRecentBills([]);
+        return;
+      }
+
+      // Group by the date of the most recent bill
+      const mostRecentDateStr = new Date(data[0].created_at).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+
+      const billsForDate = data.filter(bill => {
+        const billDateStr = new Date(bill.created_at).toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        });
+        return billDateStr === mostRecentDateStr;
+      });
+
+      setRecentBills(billsForDate);
+    } catch (err) {
+      console.error('Failed to load recent bills:', err);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadRecentBills();
+    }, [loadRecentBills])
+  );
 
   // --- Calculations ---
   const summary: BillSummary = useMemo(() => {
+    let activeItemWeight = 0;
+    let activeItemAmount = 0;
+    let activeItemsCount = 0;
+
+    const weightNum = parseFloat(weight);
+    if (selectedBreed && !isNaN(weightNum) && weightNum > 0) {
+      activeItemWeight = weightNum;
+      activeItemAmount = weightNum * selectedBreed.price_per_kg;
+      activeItemsCount = 1;
+    }
+
     return items.reduce(
       (acc, item) => ({
         totalItems: acc.totalItems + 1,
         totalWeight: acc.totalWeight + item.weight,
         grandTotal: acc.grandTotal + item.amount,
       }),
-      { totalItems: 0, totalWeight: 0, grandTotal: 0 },
+      { totalItems: activeItemsCount, totalWeight: activeItemWeight, grandTotal: activeItemAmount },
     );
-  }, [items]);
+  }, [items, selectedBreed, weight]);
 
   // --- Validate & add item ---
   const handleAddItem = useCallback(() => {
@@ -71,10 +130,7 @@ export default function CreateBillScreen() {
     }
 
     const piecesNum = parseInt(pieces, 10);
-    if (!pieces || isNaN(piecesNum) || piecesNum <= 0) {
-      setFormError('Pieces must be greater than 0');
-      return;
-    }
+    const finalPieces = isNaN(piecesNum) ? 0 : piecesNum;
 
     const weightNum = parseFloat(weight);
     if (!weight || isNaN(weightNum) || weightNum <= 0) {
@@ -88,7 +144,7 @@ export default function CreateBillScreen() {
       key: `${Date.now()}-${Math.random()}`,
       breedId: selectedBreed.id,
       breedName: selectedBreed.name,
-      pieces: piecesNum,
+      pieces: finalPieces,
       weight: weightNum,
       ratePerKg: selectedBreed.price_per_kg,
       amount,
@@ -97,11 +153,11 @@ export default function CreateBillScreen() {
     setItems((prev) => [...prev, newItem]);
 
     // Reset form for next item
-    setSelectedBreed(null);
+    setSelectedBreed(breeds.length > 0 ? breeds[0] : null);
     setPieces('');
     setWeight('');
     setSnackbar(`${selectedBreed.name} added — ₹${amount.toFixed(2)}`);
-  }, [selectedBreed, pieces, weight]);
+  }, [selectedBreed, pieces, weight, breeds]);
 
   // --- Remove item ---
   const handleRemoveItem = useCallback((key: string) => {
@@ -110,8 +166,25 @@ export default function CreateBillScreen() {
 
   // --- Save bill to database ---
   const handleSaveBill = useCallback(async () => {
-    if (items.length === 0) {
-      setFormError('Add at least one item to the bill');
+    let itemsToSave = [...items];
+
+    // Include the current form inputs if they are valid
+    const weightNum = parseFloat(weight);
+    if (selectedBreed && !isNaN(weightNum) && weightNum > 0) {
+      const piecesNum = parseInt(pieces, 10);
+      itemsToSave.push({
+        key: `auto-${Date.now()}`,
+        breedId: selectedBreed.id,
+        breedName: selectedBreed.name,
+        pieces: isNaN(piecesNum) ? 0 : piecesNum,
+        weight: weightNum,
+        ratePerKg: selectedBreed.price_per_kg,
+        amount: weightNum * selectedBreed.price_per_kg,
+      });
+    }
+
+    if (itemsToSave.length === 0) {
+      setFormError('Select a breed and enter weight to save the bill');
       return;
     }
 
@@ -120,7 +193,7 @@ export default function CreateBillScreen() {
 
     try {
       const billId = await createBill({
-        items: items.map((item) => ({
+        items: itemsToSave.map((item) => ({
           breedId: item.breedId,
           pieces: item.pieces,
           weight: item.weight,
@@ -131,10 +204,12 @@ export default function CreateBillScreen() {
       });
 
       // Clear form and items
-      setSelectedBreed(null);
+      setSelectedBreed(breeds.length > 0 ? breeds[0] : null);
       setPieces('');
       setWeight('');
       setItems([]);
+
+      await loadRecentBills();
 
       Alert.alert(
         'Bill Saved',
@@ -171,7 +246,17 @@ export default function CreateBillScreen() {
       >
         {/* ========== ADD ITEM SECTION ========== */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Add Item</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Bill Details</Text>
+            <Button
+              mode="text"
+              icon="plus"
+              onPress={handleAddItem}
+              compact
+            >
+              Add Another
+            </Button>
+          </View>
 
           <HorizontalBreedSelector
             breeds={breeds}
@@ -179,35 +264,47 @@ export default function CreateBillScreen() {
             onSelect={setSelectedBreed}
           />
 
-          <View style={styles.row}>
-            <View style={styles.halfField}>
-              <TextInput
-                label="Pieces"
-                mode="outlined"
-                value={pieces}
-                onChangeText={setPieces}
-                keyboardType="number-pad"
-                style={styles.input}
-              />
+          <View style={styles.piecesRow}>
+            <TextInput
+              label="Pieces"
+              mode="outlined"
+              value={pieces}
+              onChangeText={setPieces}
+              keyboardType="number-pad"
+              style={styles.piecesInput}
+            />
+            <View style={styles.shortcutsContainer}>
+              {[1, 2, 3, 4, 5].map((num) => (
+                <Button
+                  key={num}
+                  mode={pieces === String(num) ? 'contained' : 'outlined'}
+                  onPress={() => setPieces(String(num))}
+                  style={styles.shortcutBtn}
+                  labelStyle={styles.shortcutLabel}
+                  compact
+                >
+                  {num}
+                </Button>
+              ))}
             </View>
+          </View>
 
-            <View style={styles.halfField}>
-              <TextInput
-                label="Weight (kg)"
-                mode="outlined"
-                value={weight}
-                onChangeText={setWeight}
-                keyboardType="decimal-pad"
-                style={styles.input}
-              />
-            </View>
+          <View style={styles.weightRow}>
+            <TextInput
+              label="Weight (kg)"
+              mode="outlined"
+              value={weight}
+              onChangeText={setWeight}
+              keyboardType="decimal-pad"
+              style={styles.input}
+            />
           </View>
 
           {/* Rate preview */}
           {selectedBreed && (
             <View style={styles.ratePreview}>
               <Text style={styles.rateText}>
-                Rate: ₹{selectedBreed.price_per_kg}/kg
+                Rate: {selectedBreed.name} ₹{selectedBreed.price_per_kg}/kg
               </Text>
               {weight && !isNaN(parseFloat(weight)) && parseFloat(weight) > 0 && (
                 <Text style={styles.previewAmount}>
@@ -217,75 +314,38 @@ export default function CreateBillScreen() {
             </View>
           )}
 
-          {/* Error message */}
           {formError !== '' && (
             <Text style={styles.errorText}>{formError}</Text>
           )}
-
-          <Button
-            mode="contained"
-            icon="plus"
-            onPress={handleAddItem}
-            style={styles.addButton}
-            contentStyle={styles.addButtonContent}
-            labelStyle={styles.addButtonLabel}
-          >
-            Add Item
-          </Button>
         </View>
 
-        <Divider style={styles.divider} />
-
-        {/* ========== ITEMS LIST ========== */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            Bill Items {items.length > 0 ? `(${items.length})` : ''}
+        {/* ========== COMPACT TOTALS ========== */}
+        <View style={styles.compactTotals}>
+          <Text style={styles.compactTotalsText}>
+            Weight: {summary.totalWeight.toFixed(2)} kg
           </Text>
+          <Text style={styles.compactGrandTotal}>
+            Total: ₹{summary.grandTotal.toFixed(2)}
+          </Text>
+        </View>
 
-          {items.length === 0 ? (
-            <View style={styles.emptyItems}>
-              <Text style={styles.emptyText}>
-                No items added yet. Select a breed and add items above.
-              </Text>
-            </View>
-          ) : (
-            items.map((item, index) => (
+        {/* ========== PREVIOUS ITEMS LIST ========== */}
+        {items.length > 0 && (
+          <View style={styles.section}>
+            <Divider style={[styles.divider, { marginBottom: Spacing.md }]} />
+            <Text style={styles.sectionTitle}>
+              Previous Items ({items.length})
+            </Text>
+
+            {items.map((item, index) => (
               <BillItemCard
                 key={item.key}
                 item={item}
                 index={index}
                 onRemove={handleRemoveItem}
               />
-            ))
-          )}
-        </View>
-
-        {/* ========== TOTALS SECTION ========== */}
-        {items.length > 0 && (
-          <>
-            <Divider style={styles.divider} />
-
-            <View style={styles.totalsSection}>
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total Items</Text>
-                <Text style={styles.totalValue}>{summary.totalItems}</Text>
-              </View>
-
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total Weight</Text>
-                <Text style={styles.totalValue}>
-                  {summary.totalWeight.toFixed(2)} kg
-                </Text>
-              </View>
-
-              <View style={[styles.totalRow, styles.grandTotalRow]}>
-                <Text style={styles.grandTotalLabel}>Grand Total</Text>
-                <Text style={styles.grandTotalValue}>
-                  ₹{summary.grandTotal.toFixed(2)}
-                </Text>
-              </View>
-            </View>
-          </>
+            ))}
+          </View>
         )}
 
         {/* ========== SAVE BUTTON ========== */}
@@ -297,12 +357,32 @@ export default function CreateBillScreen() {
             style={styles.saveButton}
             contentStyle={styles.saveButtonContent}
             labelStyle={styles.saveButtonLabel}
-            disabled={items.length === 0 || saving}
+            disabled={summary.totalItems === 0 || saving}
             loading={saving}
           >
             {saving ? 'Saving...' : 'Save Bill'}
           </Button>
         </View>
+
+        {/* ========== RECENT BILLS ========== */}
+        {recentBills.length > 0 && (
+          <View style={styles.section}>
+            <Divider style={[styles.divider, { marginBottom: Spacing.md }]} />
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Recent Bills ({recentBills.length})</Text>
+              <Button mode="text" onPress={() => router.push('/bill-history')} compact>
+                View All
+              </Button>
+            </View>
+            {recentBills.map(bill => (
+              <BillHistoryCard
+                key={bill.id}
+                bill={bill}
+                onPress={() => router.push({ pathname: '/bill-detail', params: { id: String(bill.id) } })}
+              />
+            ))}
+          </View>
+        )}
       </ScrollView>
 
       {/* Snackbar for feedback */}
@@ -339,20 +419,46 @@ const styles = StyleSheet.create({
   section: {
     padding: Spacing.md,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: Colors.text,
-    marginBottom: Spacing.sm,
   },
 
   // Form
-  row: {
+  piecesRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing.md,
     gap: Spacing.sm,
   },
-  halfField: {
+  piecesInput: {
+    width: 90,
+    backgroundColor: Colors.surface,
+  },
+  shortcutsContainer: {
     flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginLeft: Spacing.sm,
+  },
+  shortcutBtn: {
+    minWidth: 45,
+    marginHorizontal: 0,
+  },
+  shortcutLabel: {
+    marginHorizontal: 0,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  weightRow: {
+    marginTop: Spacing.md,
   },
   input: {
     backgroundColor: Colors.surface,
@@ -408,41 +514,24 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.md,
   },
 
-  // Totals
-  totalsSection: {
-    padding: Spacing.md,
-    backgroundColor: Colors.surfaceVariant,
-    marginHorizontal: Spacing.md,
-    borderRadius: 10,
-    marginTop: Spacing.sm,
-  },
-  totalRow: {
+  compactTotals: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceVariant,
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 8,
   },
-  totalLabel: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-  },
-  totalValue: {
+  compactTotalsText: {
     fontSize: 15,
     fontWeight: '600',
-    color: Colors.text,
+    color: Colors.textSecondary,
   },
-  grandTotalRow: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    marginTop: Spacing.sm,
-    paddingTop: Spacing.sm,
-  },
-  grandTotalLabel: {
+  compactGrandTotal: {
     fontSize: 18,
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  grandTotalValue: {
-    fontSize: 20,
     fontWeight: '800',
     color: Colors.primary,
   },

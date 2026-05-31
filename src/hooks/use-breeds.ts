@@ -6,6 +6,7 @@ import {
   createBreed,
   updateBreed,
   deleteBreed,
+  updateBreedSequence,
 } from '../repositories/breed-repository';
 
 interface UseBreedsReturn {
@@ -16,6 +17,7 @@ interface UseBreedsReturn {
   addBreed: (name: string, pricePerKg: number) => Promise<void>;
   editBreed: (id: number, name: string, pricePerKg: number) => Promise<void>;
   removeBreed: (id: number) => Promise<void>;
+  moveBreed: (id: number, direction: 'up' | 'down') => Promise<void>;
 }
 
 /**
@@ -78,11 +80,39 @@ export function useBreeds(): UseBreedsReturn {
     }
   }, [refresh]);
 
+  const moveBreed = useCallback(async (id: number, direction: 'up' | 'down') => {
+    try {
+      setError(null);
+      const index = breeds.findIndex(b => b.id === id);
+      if (index === -1) return;
+      if (direction === 'up' && index === 0) return;
+      if (direction === 'down' && index === breeds.length - 1) return;
+
+      const newBreeds = [...breeds];
+      const swapIndex = direction === 'up' ? index - 1 : index + 1;
+      
+      // Swap elements
+      [newBreeds[index], newBreeds[swapIndex]] = [newBreeds[swapIndex], newBreeds[index]];
+
+      // Optimistic update
+      setBreeds(newBreeds);
+
+      // Save to DB
+      const orderedIds = newBreeds.map(b => b.id);
+      await updateBreedSequence(orderedIds);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to move breed';
+      setError(message);
+      await refresh(); // Revert on failure
+      throw err;
+    }
+  }, [breeds, refresh]);
+
   useFocusEffect(
     useCallback(() => {
       refresh();
     }, [refresh])
   );
 
-  return { breeds, loading, error, refresh, addBreed, editBreed, removeBreed };
+  return { breeds, loading, error, refresh, addBreed, editBreed, removeBreed, moveBreed };
 }

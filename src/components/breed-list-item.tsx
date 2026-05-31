@@ -8,6 +8,10 @@ interface BreedListItemProps {
   breed: BreedRow;
   onPress: (breed: BreedRow) => void;
   onDelete: (breed: BreedRow) => void;
+  onMoveUp: (breed: BreedRow) => void;
+  onMoveDown: (breed: BreedRow) => void;
+  isFirst: boolean;
+  isLast: boolean;
 }
 
 /**
@@ -15,12 +19,30 @@ interface BreedListItemProps {
  * Shows breed name, price per kg, and a delete button.
  * Tapping the row opens the edit modal.
  */
-export function BreedListItem({ breed, onPress, onDelete }: BreedListItemProps) {
+export function BreedListItem({ breed, onPress, onDelete, onMoveUp, onMoveDown, isFirst, isLast }: BreedListItemProps) {
   return (
     <Pressable
       style={({ pressed }) => [styles.container, pressed && styles.pressed]}
       onPress={() => onPress(breed)}
     >
+      <View style={styles.arrows}>
+        <IconButton
+          icon="chevron-up"
+          size={20}
+          disabled={isFirst}
+          onPress={() => onMoveUp(breed)}
+          style={styles.arrowIcon}
+          iconColor={isFirst ? Colors.disabled : Colors.textSecondary}
+        />
+        <IconButton
+          icon="chevron-down"
+          size={20}
+          disabled={isLast}
+          onPress={() => onMoveDown(breed)}
+          style={styles.arrowIcon}
+          iconColor={isLast ? Colors.disabled : Colors.textSecondary}
+        />
+      </View>
       <View style={styles.info}>
         <Text style={styles.name}>{breed.name}</Text>
         <Text style={styles.price}>₹{breed.price_per_kg}/kg</Text>
@@ -48,6 +70,14 @@ const styles = StyleSheet.create({
   },
   pressed: {
     backgroundColor: Colors.surfaceVariant,
+  },
+  arrows: {
+    flexDirection: 'column',
+    marginRight: Spacing.sm,
+    justifyContent: 'center',
+  },
+  arrowIcon: {
+    margin: -6,
   },
   info: {
     flex: 1,

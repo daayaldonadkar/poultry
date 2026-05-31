@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
-import { Text, ActivityIndicator, Divider } from 'react-native-paper';
+import { Text, ActivityIndicator, Divider, IconButton } from 'react-native-paper';
 import { useLocalSearchParams } from 'expo-router';
 import { getBillById } from '../repositories/bill-repository';
+import { EditBillItemModal } from '../components/edit-bill-item-modal';
 import { EmptyState } from '../components/empty-state';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
@@ -21,12 +22,20 @@ function formatDate(isoString: string): string {
 }
 
 /** Renders a single line item row */
-function ItemRow({ item, index }: { item: BillDetailItem; index: number }) {
+function ItemRow({ item, index, onEdit }: { item: BillDetailItem; index: number; onEdit: (item: BillDetailItem) => void }) {
   return (
     <View style={itemStyles.container}>
       <View style={itemStyles.header}>
         <Text style={itemStyles.index}>#{index + 1}</Text>
         <Text style={itemStyles.breedName}>{item.breedName}</Text>
+        <View style={{ flex: 1 }} />
+        <IconButton
+          icon="pencil"
+          size={18}
+          iconColor={Colors.textSecondary}
+          onPress={() => onEdit(item)}
+          style={itemStyles.editIcon}
+        />
       </View>
 
       <View style={itemStyles.details}>
@@ -60,28 +69,39 @@ export default function BillDetailScreen() {
   const [bill, setBill] = useState<BillWithItems | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [editingItem, setEditingItem] = useState<BillDetailItem | null>(null);
+
+  const loadBill = useCallback(async () => {
+    try {
+      if (!id) {
+        setError('No bill ID provided');
+        return;
+      }
+      const data = await getBillById(Number(id));
+      if (!data) {
+        setError('Bill not found');
+        return;
+      }
+      setBill(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load bill');
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
   useEffect(() => {
-    async function loadBill() {
-      try {
-        if (!id) {
-          setError('No bill ID provided');
-          return;
-        }
-        const data = await getBillById(Number(id));
-        if (!data) {
-          setError('Bill not found');
-          return;
-        }
-        setBill(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load bill');
-      } finally {
-        setLoading(false);
-      }
-    }
     loadBill();
-  }, [id]);
+  }, [loadBill]);
+
+  const handleEditItem = useCallback((item: BillDetailItem) => {
+    setEditingItem(item);
+  }, []);
+
+  const handleSaveEdit = useCallback(() => {
+    setEditingItem(null);
+    loadBill(); // Refresh bill totals and items
+  }, [loadBill]);
 
   if (loading) {
     return (
@@ -101,10 +121,11 @@ export default function BillDetailScreen() {
   }
 
   return (
-    <FlatList
-      data={bill.items}
-      keyExtractor={(item) => String(item.id)}
-      renderItem={({ item, index }) => <ItemRow item={item} index={index} />}
+    <View style={styles.flex}>
+      <FlatList
+        data={bill.items}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={({ item, index }) => <ItemRow item={item} index={index} onEdit={handleEditItem} />}
       style={styles.container}
       contentContainerStyle={styles.content}
       ListHeaderComponent={
@@ -134,12 +155,24 @@ export default function BillDetailScreen() {
             </View>
           </View>
         </>
-      }
-    />
+        }
+      />
+
+      <EditBillItemModal
+        visible={!!editingItem}
+        item={editingItem}
+        onDismiss={() => setEditingItem(null)}
+        onSave={handleSaveEdit}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -248,6 +281,11 @@ const itemStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: Colors.text,
+  },
+  editIcon: {
+    margin: 0,
+    width: 28,
+    height: 28,
   },
   details: {
     flexDirection: 'row',
